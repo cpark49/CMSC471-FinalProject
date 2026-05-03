@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Long Count — Prototype</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0b0f1a;
+    color: #e2e8f0;
+    font-family: system-ui, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* ══════════════════════════════════ LAYOUT ══════════════════════════════════ */
+  #map-panel {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #0b0f1a;
+    border-right: 1px solid #1a2535;
+  }
+  #map-svg { display: block; width: 100%; height: 100%; cursor: grab; }
+  #map-svg:active { cursor: grabbing; }
+
+  #stats-panel {
+    width: 280px;
+    flex-shrink: 0;
+    background: #0d1520;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ══════════════════════════════════ MAP PATHS ══════════════════════════════════ */
+  .county-fill     { stroke: none; pointer-events: none; vector-effect: non-scaling-stroke; }
+  .county-border   { fill: none; stroke: #ffffff0d; stroke-width: 0.4; pointer-events: none; vector-effect: non-scaling-stroke; }
+  .state-border    { fill: none; stroke: #ffffff45; stroke-width: 0.8; pointer-events: none; vector-effect: non-scaling-stroke; }
+  .state-hit       { fill: transparent; stroke: none; cursor: pointer; }
+  .state-hit:hover { fill: #ffffff08; }
+  .county-hit      { fill: transparent; stroke: none; cursor: pointer; }
+  .county-hit:hover { fill: #ffffff15; }
+  .county-selected { fill: none; stroke: #f97316; stroke-width: 1.5; pointer-events: none; vector-effect: non-scaling-stroke; }
+  .unified-fill    { pointer-events: none; vector-effect: non-scaling-stroke; }
+
+  /* ══════════════════════════════════ BREADCRUMB / BACK ══════════════════════════════════ */
+  #breadcrumb {
+    position: absolute; top: 14px; left: 14px;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; z-index: 10; user-select: none;
+    background: #0b0f1acc; padding: 5px 10px;
+    border-radius: 6px; border: 1px solid #1a2535; backdrop-filter: blur(4px);
+  }
+  .bc        { color: #4a6070; cursor: pointer; transition: color 0.15s; }
+  .bc:hover  { color: #94a3b8; }
+  .bc.active { color: #94a3b8; cursor: default; pointer-events: none; }
+  .bc-sep    { color: #1f2f42; }
+
+  #back-btn {
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: #131c2bdd; border: 1px solid #1f2f42;
+    color: #7a8fa8; padding: 7px 20px; border-radius: 7px;
+    cursor: pointer; font-size: 12px; z-index: 10; display: none;
+    transition: background 0.15s, color 0.15s; backdrop-filter: blur(4px);
+  }
+  #back-btn:hover { background: #1e2a3add; color: #e2e8f0; }
+  #zoom-hint { position: absolute; bottom: 18px; right: 14px; font-size: 10px; color: #2a3a50; z-index: 10; pointer-events: none; }
+
+  /* ══════════════════════════════════ STATS PANEL ══════════════════════════════════ */
+  #stats-header { padding: 18px 20px 13px; border-bottom: 1px solid #1a2535; flex-shrink: 0; }
+  .sh-eyebrow { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #2a3a50; margin-bottom: 4px; }
+  .sh-name    { font-size: 16px; font-weight: 700; color: #f1f5f9; line-height: 1.2; margin-bottom: 2px; }
+  .sh-sub     { font-size: 10px; color: #3a5060; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  #stats-body {
+    flex: 1; overflow-y: auto; padding: 14px 20px;
+    scrollbar-width: thin; scrollbar-color: #1f2f42 transparent;
+  }
+
+  .stat-block  { margin-bottom: 16px; }
+  .stat-label  { font-size: 9px; color: #3a5060; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 3px; }
+  .stat-val    { font-size: 24px; font-weight: 700; color: #f1f5f9; line-height: 1; margin-bottom: 1px; }
+  .stat-unit   { font-size: 10px; color: #3a5060; }
+  .divider     { border: none; border-top: 1px solid #1a2535; margin: 14px 0; }
+  .disp-title  { font-size: 9px; color: #3a5060; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; }
+  .bar-row     { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .bar-label   { width: 44px; font-size: 10px; color: #7a8fa8; }
+  .bar-bg      { flex: 1; background: #0b0f1a; border-radius: 3px; height: 7px; overflow: hidden; }
+  .bar-fill    { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+  .bar-val     { width: 46px; text-align: right; color: #cbd5e1; font-weight: 600; font-size: 10px; }
+
+  /* ── Chart tabs ── */
+  #chart-tabs { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 8px; }
+  .ct-btn {
+    font-size: 8px; padding: 2px 7px; border-radius: 3px; cursor: pointer;
+    border: 1px solid #1f2f42; background: transparent; color: #4a6070;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .ct-btn.active { background: #1f2f42; color: #94a3b8; border-color: #2d4050; }
+  .ct-btn:hover  { color: #94a3b8; }
+
+  /* ── Time chart ── */
+  #chart-section { margin-top: 4px; }
+  .chart-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .chart-title { font-size: 9px; color: #3a5060; text-transform: uppercase; letter-spacing: 0.6px; }
+  .chart-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cl-item { display: flex; align-items: center; gap: 4px; font-size: 8px; color: #4a6070; }
+  .cl-swatch { width: 16px; height: 2px; border-radius: 1px; }
+  #chart-svg { display: block; width: 100%; overflow: visible; }
+  .chart-line   { fill: none; stroke-width: 1.5; }
+  .chart-axis   { stroke: #1a2535; stroke-width: 1; }
+  .chart-label  { fill: #2a3a50; font-size: 8.5px; }
+  .chart-yr-lbl { fill: #3a5060; font-size: 8.5px; }
+  .chart-cursor { stroke: #ffffff35; stroke-width: 1; stroke-dasharray: 3,3; pointer-events: none; }
+  .chart-dot    { stroke-width: 1.5; }
+  .chart-empty  { font-size: 10px; fill: #2a3a50; }
+
+  /* ══════════════════════════════════ YEAR SLIDER + PLAY ══════════════════════════════════ */
+  #year-block { padding: 12px 20px 14px; border-top: 1px solid #1a2535; flex-shrink: 0; }
+  #year-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  #year-label-text { font-size: 9px; color: #3a5060; text-transform: uppercase; letter-spacing: 0.6px; }
+
+  #year-controls { display: flex; align-items: center; gap: 10px; }
+  #play-btn {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #1a2535; border: 1px solid #2d3f55; color: #94a3b8; font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background 0.15s, color 0.15s; flex-shrink: 0; line-height: 1;
+  }
+  #play-btn:hover  { background: #f97316; color: #0b0f1a; border-color: #f97316; }
+  #play-btn.playing { background: #f97316; color: #0b0f1a; border-color: #f97316; }
+  #year-display { font-size: 20px; font-weight: 700; color: #f1f5f9; letter-spacing: -0.5px; }
+
+  #year-slider {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 3px; border-radius: 2px; background: #1a2535; outline: none; cursor: pointer;
+  }
+  #year-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #f97316; cursor: pointer; border: 2px solid #0d1520; transition: transform 0.1s;
+  }
+  #year-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  #year-slider::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #f97316; cursor: pointer; border: 2px solid #0d1520;
+  }
+  #year-range { display: flex; justify-content: space-between; font-size: 9px; color: #2a3a50; margin-top: 5px; }
+
+  /* ══════════════════════════════════ LEGEND + COLOR TOGGLE ══════════════════════════════════ */
+  #legend { padding: 12px 20px 14px; border-top: 1px solid #1a2535; flex-shrink: 0; }
+  #legend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  #legend-title  { font-size: 9px; color: #3a5060; text-transform: uppercase; letter-spacing: 0.6px; }
+
+  #color-mode-btns { display: flex; gap: 4px; }
+  .cm-btn {
+    font-size: 8.5px; padding: 2px 7px; border-radius: 3px; cursor: pointer;
+    border: 1px solid #1f2f42; background: transparent; color: #4a6070; transition: all 0.15s;
+  }
+  .cm-btn.active { background: #1f2f42; color: #94a3b8; border-color: #2d4050; }
+  .cm-btn:hover  { color: #94a3b8; }
+
+  #legend-gradient-wrap { display: block; }
+  #legend-canvas  { display: block; border-radius: 3px; margin-bottom: 5px; width: 100%; height: 8px; }
+  #legend-labels  { display: flex; justify-content: space-between; font-size: 9px; color: #3a5060; }
+
+  .legend-swatch-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
+  .ls-box { width: 14px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .ls-label { font-size: 9px; color: #2a3a50; }
+
+  #legend-urb-wrap { display: none; }
+  .urb-row    { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .urb-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .urb-label  { font-size: 10px; color: #7a8fa8; }
+
+  /* ══════════════════════════════════ TOOLTIP ══════════════════════════════════ */
+  #tooltip {
+    position: fixed; background: #1a2535; border: 1px solid #2d3f55;
+    border-radius: 8px; padding: 10px 13px;
+    pointer-events: none; font-size: 12px; min-width: 175px;
+    opacity: 0; transition: opacity 0.1s; z-index: 50;
+    box-shadow: 0 4px 16px #00000060;
+  }
+  #tooltip.show { opacity: 1; }
+  .tt-name { font-weight: 700; font-size: 12px; color: #f1f5f9; margin-bottom: 6px; }
+  .tt-row  { display: flex; justify-content: space-between; gap: 12px; color: #7a8fa8; font-size: 11px; line-height: 1.8; }
+  .tt-val  { color: #e2e8f0; font-weight: 600; }
+  .tt-hint { color: #2a3a50; font-size: 10px; margin-top: 4px; font-style: italic; }
+
+  /* ══════════════════════════════════ LOADING ══════════════════════════════════ */
+  #loading {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #0b0f1a; z-index: 100; gap: 12px;
+  }
+  #loading.hidden { display: none; }
+  #loading-title { font-size: 20px; font-weight: 700; color: #f1f5f9; }
+  #loading-text  { font-size: 12px; color: #3a5060; }
+  #loading-bar-wrap { width: 220px; height: 3px; background: #1f2f42; border-radius: 2px; overflow: hidden; }
+  #loading-bar { height: 100%; width: 0%; background: #f97316; border-radius: 2px; transition: width 0.25s; }
+  #loading-error { font-size: 12px; color: #f87171; max-width: 420px; text-align: center; line-height: 1.7; display: none; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div id="loading-title">The Long Count</div>
+  <div id="loading-text">Loading geography…</div>
+  <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  <div id="loading-error"></div>
+</div>
+
+<div id="map-panel">
+  <svg id="map-svg"><g id="map-root"></g></svg>
+  <div id="breadcrumb">
+    <span class="bc active" id="bc-us"     onclick="goNational()">United States</span>
+    <span class="bc-sep"    id="bc-s1"     style="display:none">›</span>
+    <span class="bc"        id="bc-state"  style="display:none"></span>
+    <span class="bc-sep"    id="bc-s2"     style="display:none">›</span>
+    <span class="bc active" id="bc-county" style="display:none"></span>
+  </div>
+  <button id="back-btn" onclick="goBack()">← Back</button>
+  <div id="zoom-hint">Scroll to zoom · Drag to pan</div>
+</div>
+
+<div id="stats-panel">
+  <div id="stats-header">
+    <div class="sh-eyebrow" id="sh-level">National</div>
+    <div class="sh-name"    id="sh-name">United States</div>
+    <div class="sh-sub"     id="sh-sub">—</div>
+  </div>
+
+  <div id="stats-body">
+    <div class="stat-block">
+      <div class="stat-label">Total Jailed</div>
+      <div class="stat-val"  id="p-jailpop">—</div>
+      <div class="stat-unit">people in jail</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-label">Jail Rate</div>
+      <div class="stat-val"  id="p-jailrate">—</div>
+      <div class="stat-unit">per 100,000 residents</div>
+    </div>
+
+    <hr class="divider">
+    <div class="disp-title">Racial Disparity — Jail Rate / 100k</div>
+    <div id="p-bars"></div>
+
+    <hr class="divider">
+
+    <div id="chart-section">
+      <div id="chart-tabs">
+        <button class="ct-btn active" id="ct-racial"  onclick="setChartMode('racial')">Racial</button>
+        <button class="ct-btn"        id="ct-gender"  onclick="setChartMode('gender')">Gender</button>
+        <button class="ct-btn"        id="ct-custody" onclick="setChartMode('custody')">Custody</button>
+        <button class="ct-btn"        id="ct-system"  onclick="setChartMode('system')">Jail vs Prison</button>
+      </div>
+      <div class="chart-title-row">
+        <span class="chart-title" id="chart-title">Jail Rate Over Time</span>
+        <div class="chart-legend" id="chart-legend"></div>
+      </div>
+      <svg id="chart-svg" height="110">
+        <defs>
+          <linearGradient id="cg-total" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f97316" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  </div>
+
+  <div id="year-block">
+    <div id="year-header">
+      <span id="year-label-text">Year</span>
+      <div id="year-controls">
+        <button id="play-btn" onclick="togglePlay()" title="Play/Pause">▶</button>
+        <span id="year-display">—</span>
+      </div>
+    </div>
+    <input id="year-slider" type="range" min="0" max="0" step="1" value="0">
+    <div id="year-range"><span id="yr-lo">—</span><span id="yr-hi">—</span></div>
+  </div>
+
+  <div id="legend">
+    <div id="legend-header">
+      <div id="legend-title">Jail Rate per 100,000</div>
+      <div id="color-mode-btns">
+        <button class="cm-btn active" id="cm-jail" onclick="setColorMode('jail')">Rate</button>
+        <button class="cm-btn"        id="cm-urb"  onclick="setColorMode('urbanicity')">Urbanicity</button>
+      </div>
+    </div>
+    <div id="legend-gradient-wrap">
+      <canvas id="legend-canvas" height="8"></canvas>
+      <div id="legend-labels"><span>0</span><span id="leg-hi">—</span></div>
+      <div class="legend-swatch-row">
+        <div class="ls-box" style="background:#152030;border:1px solid #1f2f42"></div>
+        <span class="ls-label">No data this year</span>
+      </div>
+      <div class="legend-swatch-row">
+        <div class="ls-box" style="background:repeating-linear-gradient(45deg,#0d1a28 0px,#0d1a28 3px,#1f3048 3px,#1f3048 6px)"></div>
+        <span class="ls-label">Unified state system</span>
+      </div>
+    </div>
+    <div id="legend-urb-wrap">
+      <div class="urb-row"><div class="urb-swatch" style="background:#f97316"></div><span class="urb-label">Rural</span></div>
+      <div class="urb-row"><div class="urb-swatch" style="background:#fb923c"></div><span class="urb-label">Small / Mid</span></div>
+      <div class="urb-row"><div class="urb-swatch" style="background:#60a5fa"></div><span class="urb-label">Suburban</span></div>
+      <div class="urb-row"><div class="urb-swatch" style="background:#818cf8"></div><span class="urb-label">Urban</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-row"><span>Jail Rate</span><span class="tt-val" id="tt-rate">—</span></div>
+  <div class="tt-row"><span>Jailed</span>   <span class="tt-val" id="tt-pop">—</span></div>
+  <div class="tt-row" id="tt-urb-row" style="display:none"><span>Urbanicity</span><span class="tt-val" id="tt-urb">—</span></div>
+  <div class="tt-hint" id="tt-hint"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════
+const EXCLUDED       = new Set(['02', '15']);           // Alaska, Hawaii (not in dataset)
+const UNIFIED_STATES = new Set(['09', '10', '44', '50']); // CT, DE, RI, VT — unified systems
+
+const FIPS_NAME = {
+  "01":"Alabama","04":"Arizona","05":"Arkansas","06":"California",
+  "08":"Colorado","09":"Connecticut","10":"Delaware","11":"District of Columbia",
+  "12":"Florida","13":"Georgia","16":"Idaho","17":"Illinois","18":"Indiana",
+  "19":"Iowa","20":"Kansas","21":"Kentucky","22":"Louisiana","23":"Maine",
+  "24":"Maryland","25":"Massachusetts","26":"Michigan","27":"Minnesota",
+  "28":"Mississippi","29":"Missouri","30":"Montana","31":"Nebraska","32":"Nevada",
+  "33":"New Hampshire","34":"New Jersey","35":"New Mexico","36":"New York",
+  "37":"North Carolina","38":"North Dakota","39":"Ohio","40":"Oklahoma","41":"Oregon",
+  "42":"Pennsylvania","44":"Rhode Island","45":"South Carolina","46":"South Dakota",
+  "47":"Tennessee","48":"Texas","49":"Utah","50":"Vermont","51":"Virginia",
+  "53":"Washington","54":"West Virginia","55":"Wisconsin","56":"Wyoming"
+};
+
+const URB_COLOR = {
+  'rural':     '#f97316',
+  'small/mid': '#fb923c',
+  'suburban':  '#60a5fa',
+  'urban':     '#818cf8',
+};
+
+const NO_DATA_COLOR = '#152030';
+
+const SERIES_COLOR = {
+  total:     '#f97316',
+  black:     '#60a5fa',
+  white:     '#a78bfa',
+  latinx:    '#34d399',
+  native:    '#fb923c',
+  male:      '#38bdf8',
+  female:    '#f472b6',
+  pretrial:  '#facc15',
+  sentenced: '#4ade80',
+  prison:    '#c084fc',
+};
+
+// Chart mode definitions — declared here so setChartMode can reference them
+const CHART_MODES = {
+  racial: {
+    title: 'Racial Divergence Over Time',
+    lines: [
+      { field: 'blackRate',  label: 'Black',  color: SERIES_COLOR.black  },
+      { field: 'whiteRate',  label: 'White',  color: SERIES_COLOR.white  },
+      { field: 'latinxRate', label: 'Latino', color: SERIES_COLOR.latinx },
+      { field: 'nativeRate', label: 'Native', color: SERIES_COLOR.native },
+    ],
+    bgField: 'jailRate',
+  },
+  gender: {
+    title: 'Gender Breakdown Over Time',
+    lines: [
+      { field: 'maleRate',   label: 'Male',   color: SERIES_COLOR.male   },
+      { field: 'femaleRate', label: 'Female', color: SERIES_COLOR.female },
+    ],
+    bgField: 'jailRate',
+  },
+  custody: {
+    title: 'Custody Type Over Time',
+    lines: [
+      { field: 'pretrialRate',  label: 'Pretrial',  color: SERIES_COLOR.pretrial  },
+      { field: 'sentencedRate', label: 'Sentenced', color: SERIES_COLOR.sentenced },
+    ],
+    bgField: null,
+  },
+  system: {
+    title: 'Jail vs Prison Rate Over Time',
+    lines: [
+      { field: 'jailRate',   label: 'Jail',   color: SERIES_COLOR.total  },
+      { field: 'prisonRate', label: 'Prison', color: SERIES_COLOR.prison },
+    ],
+    bgField: null,
+  },
+};
+
+// ═══════════════════════════════════════════════════════
+// GLOBALS
+// ═══════════════════════════════════════════════════════
+let VIEW      = 'national';
+let selState  = null;
+let selFips   = null;
+let colorMode = 'jail';
+let chartMode = 'racial';
+
+let countyMap = new Map();
+let stateMap  = new Map();
+let natStats  = {};
+
+let allCounty  = new Map();
+let allState   = new Map();
+let allNat     = new Map();
+let availYears = [];
+let currentYear = 2019;
+
+let topoUS    = null;
+let cScale    = null;
+let globalMax = 0;
+let mapW, mapH, geoPath, mapZoom;
+let playTimer = null;
+let isPlaying = false;
+
+const svgEl = document.getElementById('map-svg');
+const svg   = d3.select(svgEl);
+const root  = d3.select('#map-root');
+
+// ═══════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════
+function setLoad(msg, pct) {
+  document.getElementById('loading-text').textContent = msg;
+  document.getElementById('loading-bar').style.width  = pct + '%';
+}
+function showError(msg) {
+  document.getElementById('loading-error').textContent = msg;
+  document.getElementById('loading-error').style.display = 'block';
+  document.getElementById('loading-bar-wrap').style.display = 'none';
+  document.getElementById('loading-text').style.display = 'none';
+}
+function tick() { return new Promise(r => setTimeout(r, 20)); }
+function stateFipsOf(d)  { return String(d.id).padStart(2, '0'); }
+function countyFipsOf(d) { return String(d.id).padStart(5, '0'); }
+function isExcluded(sf)  { return EXCLUDED.has(sf); }
+function isUnified(sf)   { return UNIFIED_STATES.has(sf); }
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+async function init() {
+  try {
+    setLoad('Loading US geography…', 10);
+    topoUS = await d3.json('https://cdn.jsdelivr.net/npm/us-atlas@3/counties-albers-10m.json');
+
+    setLoad('Loading county data…', 30);
+    const rows = await d3.csv('data/incarceration_trends_county.csv');
+
+    setLoad('Processing all years…', 55);
+    await tick();
+    processAllYears(rows);
+
+    setLoad('Building scales…', 72);
+    buildColorScale();
+    setupSlider();
+
+    setLoad('Setting up map…', 84);
+    setupMap();
+    setYear(currentYear, false);
+
+    setLoad('Rendering…', 95);
+    await tick();
+    renderNational();
+    document.getElementById('loading').classList.add('hidden');
+
+  } catch(e) {
+    console.error(e);
+    showError('Could not load data.\n\nRun from a local server:\npython -m http.server 8000\n\nError: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// MAP SETUP
+// ═══════════════════════════════════════════════════════
+function setupMap() {
+  const panel = document.getElementById('map-panel');
+  mapW = panel.clientWidth;
+  mapH = panel.clientHeight;
+  svgEl.setAttribute('width',  mapW);
+  svgEl.setAttribute('height', mapH);
+
+  const statesFeat = topojson.feature(topoUS, topoUS.objects.states);
+  const contiguous = {
+    type: 'FeatureCollection',
+    features: statesFeat.features.filter(d => !isExcluded(stateFipsOf(d)))
+  };
+
+  const proj = d3.geoIdentity().fitExtent([[20, 20], [mapW - 20, mapH - 20]], contiguous);
+  geoPath = d3.geoPath(proj);
+
+  mapZoom = d3.zoom()
+    .scaleExtent([0.8, 32])
+    .translateExtent([[-mapW * 0.5, -mapH * 0.5], [mapW * 1.5, mapH * 1.5]])
+    .on('zoom', ev => root.attr('transform', ev.transform));
+
+  svg.call(mapZoom);
+  svg.on('dblclick.zoom', null);
+  svg.on('dblclick', () => goNational());
+}
+
+function zoomToFeature(feat, padding) {
+  padding = padding || 50;
+  const [[x0, y0], [x1, y1]] = geoPath.bounds(feat);
+  const scale = Math.min(mapW / (x1 - x0 + padding * 2), mapH / (y1 - y0 + padding * 2));
+  const tx = (mapW - (x0 + x1) * scale) / 2;
+  const ty = (mapH - (y0 + y1) * scale) / 2;
+  svg.transition().duration(700).ease(d3.easeCubicInOut)
+    .call(mapZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+function resetZoom(dur) {
+  svg.transition().duration(dur || 600).ease(d3.easeCubicInOut)
+    .call(mapZoom.transform, d3.zoomIdentity);
+}
+
+// ═══════════════════════════════════════════════════════
+// DATA PROCESSING
+// ═══════════════════════════════════════════════════════
+function processAllYears(rows) {
+  const cov = d3.rollup(rows,
+    v => v.filter(d => +d.total_jail_pop_rate > 0).length,
+    d => +d.year
+  );
+  availYears = [...cov.keys()].filter(y => cov.get(y) >= 300).sort((a, b) => a - b);
+  currentYear = availYears.includes(2019) ? 2019 : availYears[availYears.length - 1];
+
+  rows.forEach(d => {
+    const yr   = +d.year;
+    if (!availYears.includes(yr)) return;
+    const fips = String(d.county_fips || '').padStart(5, '0');
+    if (!fips || fips === '00000') return;
+    const sf = fips.slice(0, 2);
+    if (isExcluded(sf)) return;
+
+    const jr   = +d.total_jail_pop_rate           || 0;
+    const jp   = +d.total_jail_pop                || 0;
+    const pop  = +d.total_pop_15to64              || 0;
+    const br   = +d.black_jail_pop_rate           || 0;
+    const wr   = +d.white_jail_pop_rate           || 0;
+    const lr   = +d.latinx_jail_pop_rate          || 0;
+    const nr   = +d.native_jail_pop_rate          || 0;
+    const mr   = +d.male_jail_pop_rate            || 0;
+    const fr   = +d.female_jail_pop_rate          || 0;
+    const ptrr = +d.total_pretrial_custody_rate   || 0;
+    const senr = +d.total_sentenced_custody_rate  || 0;
+    const prr  = +d.total_prison_pop_rate         || 0;
+    const urb  = (d.urbanicity || '').toLowerCase().trim();
+
+    if (!allCounty.has(fips)) {
+      allCounty.set(fips, {
+        name: d.county_name || 'Unknown County',
+        state: d.state_abbr || '',
+        stateFips: String(d.state_fips || sf).padStart(2, '0'),
+        urbanicity: urb || null,
+        years: new Map()
+      });
+    } else if (!allCounty.get(fips).urbanicity && urb) {
+      allCounty.get(fips).urbanicity = urb;
+    }
+
+    allCounty.get(fips).years.set(yr, {
+      jailRate:     jr,
+      jailPop:      jp,
+      pop,
+      blackRate:    br   || null,
+      whiteRate:    wr   || null,
+      latinxRate:   lr   || null,
+      nativeRate:   nr   || null,
+      maleRate:     mr   || null,
+      femaleRate:   fr   || null,
+      pretrialRate: ptrr || null,
+      sentencedRate:senr || null,
+      prisonRate:   prr  || null,
+    });
+  });
+
+  // State rollup per year
+  availYears.forEach(yr => {
+    const byState = new Map();
+    allCounty.forEach((cd, fips) => {
+      const ys = cd.years.get(yr);
+      if (!ys || ys.jailRate <= 0) return;
+      if (!byState.has(cd.stateFips)) byState.set(cd.stateFips, []);
+      byState.get(cd.stateFips).push(ys);
+    });
+
+    byState.forEach((counties, sf) => {
+      const jt   = d3.sum(counties, d => d.jailPop);
+      const pt   = d3.sum(counties, d => d.pop);
+      const rV   = counties.filter(d => d.blackRate  > 0 && d.whiteRate > 0);
+      const lV   = rV.filter(d => d.latinxRate > 0);
+      const nV   = counties.filter(d => d.nativeRate > 0);
+      const mV   = counties.filter(d => d.maleRate   > 0);
+      const fV   = counties.filter(d => d.femaleRate > 0);
+      const ptV  = counties.filter(d => d.pretrialRate  > 0);
+      const snV  = counties.filter(d => d.sentencedRate > 0);
+      const prV  = counties.filter(d => d.prisonRate    > 0);
+
+      if (!allState.has(sf)) allState.set(sf, new Map());
+      allState.get(sf).set(yr, {
+        year:         yr,
+        jailPop:      jt,
+        pop:          pt,
+        jailRate:     pt > 0 ? (jt / pt) * 1e5 : d3.mean(counties, d => d.jailRate),
+        blackRate:    rV.length  ? d3.mean(rV,  d => d.blackRate)     : null,
+        whiteRate:    rV.length  ? d3.mean(rV,  d => d.whiteRate)     : null,
+        latinxRate:   lV.length  ? d3.mean(lV,  d => d.latinxRate)   : null,
+        nativeRate:   nV.length  ? d3.mean(nV,  d => d.nativeRate)   : null,
+        maleRate:     mV.length  ? d3.mean(mV,  d => d.maleRate)     : null,
+        femaleRate:   fV.length  ? d3.mean(fV,  d => d.femaleRate)   : null,
+        pretrialRate: ptV.length ? d3.mean(ptV, d => d.pretrialRate) : null,
+        sentencedRate:snV.length ? d3.mean(snV, d => d.sentencedRate): null,
+        prisonRate:   prV.length ? d3.mean(prV, d => d.prisonRate)   : null,
+      });
+    });
+
+    // National rollup
+    const allForYear = [...byState.values()].flat();
+    const stRates = [...byState.values()].map(cs => {
+      const jt = d3.sum(cs, d => d.jailPop), pt = d3.sum(cs, d => d.pop);
+      return pt > 0 ? (jt / pt) * 1e5 : d3.mean(cs, d => d.jailRate);
+    }).filter(r => r > 0);
+
+    const rV  = allForYear.filter(d => d.blackRate    > 0 && d.whiteRate > 0);
+    const lV  = rV.filter(d => d.latinxRate > 0);
+    const nV  = allForYear.filter(d => d.nativeRate   > 0);
+    const mV  = allForYear.filter(d => d.maleRate     > 0);
+    const fV  = allForYear.filter(d => d.femaleRate   > 0);
+    const ptV = allForYear.filter(d => d.pretrialRate  > 0);
+    const snV = allForYear.filter(d => d.sentencedRate > 0);
+    const prV = allForYear.filter(d => d.prisonRate    > 0);
+
+    allNat.set(yr, {
+      year:         yr,
+      jailPop:      d3.sum(allForYear, d => d.jailPop),
+      pop:          d3.sum(allForYear, d => d.pop),
+      jailRate:     d3.mean(stRates),
+      blackRate:    rV.length  ? d3.mean(rV,  d => d.blackRate)     : null,
+      whiteRate:    rV.length  ? d3.mean(rV,  d => d.whiteRate)     : null,
+      latinxRate:   lV.length  ? d3.mean(lV,  d => d.latinxRate)   : null,
+      nativeRate:   nV.length  ? d3.mean(nV,  d => d.nativeRate)   : null,
+      maleRate:     mV.length  ? d3.mean(mV,  d => d.maleRate)     : null,
+      femaleRate:   fV.length  ? d3.mean(fV,  d => d.femaleRate)   : null,
+      pretrialRate: ptV.length ? d3.mean(ptV, d => d.pretrialRate) : null,
+      sentencedRate:snV.length ? d3.mean(snV, d => d.sentencedRate): null,
+      prisonRate:   prV.length ? d3.mean(prV, d => d.prisonRate)   : null,
+    });
+  });
+
+  const allRates = [];
+  allCounty.forEach(cd => cd.years.forEach(ys => { if (ys.jailRate > 0) allRates.push(ys.jailRate); }));
+  allRates.sort(d3.ascending);
+  globalMax = d3.quantile(allRates, 0.95) || 1000;
+}
+
+// ─── setYear ───
+function setYear(yr, redraw) {
+  currentYear = yr;
+  countyMap.clear(); stateMap.clear();
+
+  allCounty.forEach((cd, fips) => {
+    const ys = cd.years.get(yr);
+    if (!ys) return;
+    countyMap.set(fips, {
+      name: cd.name, state: cd.state, stateFips: cd.stateFips,
+      urbanicity: cd.urbanicity, year: yr, ...ys
+    });
+  });
+  allState.forEach((yMap, sf) => { const s = yMap.get(yr); if (s) stateMap.set(sf, s); });
+  natStats = allNat.get(yr) || { year: yr };
+
+  document.getElementById('year-display').textContent = yr;
+  const slider = document.getElementById('year-slider');
+  const pct = ((+slider.value) / (availYears.length - 1)) * 100;
+  slider.style.background = `linear-gradient(to right, #f97316 ${pct}%, #1a2535 ${pct}%)`;
+
+  if (redraw === false) return;
+
+  root.selectAll('.county-fill')
+    .transition().duration(isPlaying ? 150 : 200)
+    .attr('fill', d => countyColor(countyFipsOf(d)));
+
+  if (VIEW === 'national') {
+    updatePanel('national', 'United States', natStats);
+    drawTimeChart('national', null);
+  } else if (VIEW === 'state' && selState) {
+    const sf = stateFipsOf(selState);
+    updatePanel('state', FIPS_NAME[sf] || '', stateMap.get(sf) || { year: yr });
+    drawTimeChart('state', sf);
+  } else if (VIEW === 'county' && selFips) {
+    const cd = countyMap.get(selFips);
+    if (cd) { updatePanel('county', `${cd.name}, ${cd.state}`, cd); drawTimeChart('county', selFips); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// COLOR SCALE
+// ═══════════════════════════════════════════════════════
+function buildColorScale() {
+  cScale = d3.scaleSequential([0, globalMax], d3.interpolate('#162033', '#f97316')).clamp(true);
+  const cvs = document.getElementById('legend-canvas');
+  cvs.width = cvs.offsetWidth || 240;
+  const ctx = cvs.getContext('2d');
+  for (let i = 0; i < cvs.width; i++) {
+    ctx.fillStyle = cScale((i / cvs.width) * globalMax);
+    ctx.fillRect(i, 0, 1, 8);
+  }
+  document.getElementById('leg-hi').textContent = Math.round(globalMax).toLocaleString();
+}
+
+function countyColor(fips) {
+  const cd = countyMap.get(fips);
+  if (!cd) return NO_DATA_COLOR;
+  if (colorMode === 'urbanicity') return URB_COLOR[cd.urbanicity] || NO_DATA_COLOR;
+  return cd.jailRate > 0 ? cScale(cd.jailRate) : NO_DATA_COLOR;
+}
+
+function setColorMode(mode) {
+  colorMode = mode;
+  document.getElementById('cm-jail').classList.toggle('active', mode === 'jail');
+  document.getElementById('cm-urb').classList.toggle('active',  mode === 'urbanicity');
+  document.getElementById('legend-gradient-wrap').style.display = mode === 'jail' ? 'block' : 'none';
+  document.getElementById('legend-urb-wrap').style.display      = mode === 'urbanicity' ? 'block' : 'none';
+  document.getElementById('legend-title').textContent =
+    mode === 'jail' ? 'Jail Rate per 100,000' : 'Urbanicity';
+  root.selectAll('.county-fill')
+    .transition().duration(300)
+    .attr('fill', d => countyColor(countyFipsOf(d)));
+}
+window.setColorMode = setColorMode;
+
+// ═══════════════════════════════════════════════════════
+// YEAR SLIDER + PLAY
+// ═══════════════════════════════════════════════════════
+function setupSlider() {
+  const slider = document.getElementById('year-slider');
+  slider.min = 0;
+  slider.max = availYears.length - 1;
+  slider.value = availYears.indexOf(currentYear);
+  document.getElementById('yr-lo').textContent = availYears[0];
+  document.getElementById('yr-hi').textContent = availYears[availYears.length - 1];
+  slider.addEventListener('input', function () {
+    if (isPlaying) pausePlay();
+    setYear(availYears[+this.value], true);
+  });
+}
+
+function togglePlay() { isPlaying ? pausePlay() : startPlay(); }
+window.togglePlay = togglePlay;
+
+function startPlay() {
+  isPlaying = true;
+  document.getElementById('play-btn').textContent = '⏸';
+  document.getElementById('play-btn').classList.add('playing');
+  const slider = document.getElementById('year-slider');
+  if (+slider.value >= availYears.length - 1) {
+    slider.value = 0;
+    setYear(availYears[0], true);
+  }
+  playTimer = setInterval(() => {
+    const s = document.getElementById('year-slider');
+    const next = +s.value + 1;
+    if (next >= availYears.length) { pausePlay(); return; }
+    s.value = next;
+    setYear(availYears[next], true);
+  }, 550);
+}
+
+function pausePlay() {
+  isPlaying = false;
+  clearInterval(playTimer); playTimer = null;
+  document.getElementById('play-btn').textContent = '▶';
+  document.getElementById('play-btn').classList.remove('playing');
+}
+
+// ═══════════════════════════════════════════════════════
+// CHART MODE TOGGLE
+// ═══════════════════════════════════════════════════════
+function setChartMode(mode) {
+  chartMode = mode;
+  // Update tab button states
+  ['racial','gender','custody','system'].forEach(m => {
+    const btn = document.getElementById('ct-' + m);
+    if (btn) btn.classList.toggle('active', m === mode);
+  });
+  // Redraw chart for current view
+  if (VIEW === 'national') drawTimeChart('national', null);
+  else if (VIEW === 'state'  && selState) drawTimeChart('state',  stateFipsOf(selState));
+  else if (VIEW === 'county' && selFips)  drawTimeChart('county', selFips);
+}
+window.setChartMode = setChartMode;
+
+// ═══════════════════════════════════════════════════════
+// TIME CHART
+// ═══════════════════════════════════════════════════════
+function drawTimeChart(level, id) {
+  const svgNode = document.getElementById('chart-svg');
+  const W   = svgNode.getBoundingClientRect().width || 240;
+  const H   = 110;
+  const PAD = { top: 8, right: 6, bottom: 18, left: 30 };
+  const iW  = W - PAD.left - PAD.right;
+  const iH  = H - PAD.top  - PAD.bottom;
+
+  // Pull a named field as a time series for the current level/id
+  function getSeries(field) {
+    const arr = [];
+    if (level === 'national') {
+      allNat.forEach((s, yr) => { if ((s[field] || 0) > 0) arr.push({ year: yr, rate: s[field] }); });
+    } else if (level === 'state') {
+      const yMap = allState.get(id);
+      if (yMap) yMap.forEach((s, yr) => { if ((s[field] || 0) > 0) arr.push({ year: yr, rate: s[field] }); });
+    } else {
+      const cd = allCounty.get(id);
+      if (cd) cd.years.forEach((ys, yr) => { if ((ys[field] || 0) > 0) arr.push({ year: yr, rate: ys[field] }); });
+    }
+    return arr.sort((a, b) => a.year - b.year);
+  }
+
+  const modeDef = CHART_MODES[chartMode] || CHART_MODES.racial;
+
+  // Build line datasets, filtering out those with < 2 points
+  const lineData = modeDef.lines
+    .map(l => ({ ...l, data: getSeries(l.field) }))
+    .filter(l => l.data.length >= 2);
+
+  const bgData = modeDef.bgField ? getSeries(modeDef.bgField) : [];
+
+  // Update title
+  document.getElementById('chart-title').textContent = modeDef.title;
+
+  // Update inline legend
+  const legendEl = document.getElementById('chart-legend');
+  legendEl.innerHTML = lineData.map(l =>
+    `<div class="cl-item"><div class="cl-swatch" style="background:${l.color}"></div>${l.label}</div>`
+  ).join('');
+
+  // Render SVG
+  const sp = d3.select(svgNode);
+  sp.selectAll('*').remove();
+  sp.attr('width', W).attr('height', H);
+
+  // Re-add gradient def
+  const defs = sp.append('defs');
+  const grad = defs.append('linearGradient').attr('id', 'cg-bg')
+    .attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 1);
+  grad.append('stop').attr('offset', '0%').attr('stop-color', '#f97316').attr('stop-opacity', 0.4);
+  grad.append('stop').attr('offset', '100%').attr('stop-color', '#f97316').attr('stop-opacity', 0);
+
+  // Collect all points to set axis extents
+  const allPoints = [...lineData.flatMap(l => l.data), ...bgData];
+  if (allPoints.length < 2) {
+    sp.append('text').attr('class', 'chart-empty')
+      .attr('x', W / 2).attr('y', H / 2 + 10).attr('text-anchor', 'middle')
+      .attr('fill', '#2a3a50').attr('font-size', '10px')
+      .text('No data for this view');
+    return;
+  }
+
+  const xExt = d3.extent(allPoints, d => d.year);
+  const yMax = d3.max(allPoints, d => d.rate) * 1.1;
+  const xS   = d3.scaleLinear().domain(xExt).range([0, iW]);
+  const yS   = d3.scaleLinear().domain([0, yMax]).range([iH, 0]);
+
+  const g = sp.append('g').attr('transform', `translate(${PAD.left},${PAD.top})`);
+
+  const makeLine = d3.line().x(d => xS(d.year)).y(d => yS(d.rate)).curve(d3.curveMonotoneX);
+  const makeArea = d3.area().x(d => xS(d.year)).y0(iH).y1(d => yS(d.rate)).curve(d3.curveMonotoneX);
+
+  // Faint background total / jail-rate line with area fill
+  if (bgData.length >= 2) {
+    g.append('path').datum(bgData).attr('d', makeArea).attr('fill', 'url(#cg-bg)').attr('opacity', 0.2);
+    g.append('path').datum(bgData).attr('fill', 'none')
+      .attr('stroke', '#ffffff10').attr('stroke-width', 1).attr('d', makeLine);
+  }
+
+  // Main series lines
+  lineData.forEach(({ data, color }) => {
+    g.append('path').datum(data).attr('class', 'chart-line')
+      .attr('stroke', color).attr('d', makeLine);
+  });
+
+  // Current-year cursor + dots
+  if (availYears.includes(currentYear)) {
+    const cx = xS(currentYear);
+    g.append('line').attr('class', 'chart-cursor')
+      .attr('x1', cx).attr('y1', 0).attr('x2', cx).attr('y2', iH);
+    lineData.forEach(({ data, color }) => {
+      const pt = data.find(d => d.year === currentYear);
+      if (pt) {
+        g.append('circle').attr('class', 'chart-dot')
+          .attr('cx', cx).attr('cy', yS(pt.rate)).attr('r', 3)
+          .attr('fill', color).attr('stroke', '#0d1520');
+      }
+    });
+  }
+
+  // X axis line + labels
+  g.append('line').attr('class', 'chart-axis').attr('x1', 0).attr('y1', iH).attr('x2', iW).attr('y2', iH);
+  [xExt[0], xExt[1]].forEach((yr, i) => {
+    g.append('text').attr('class', 'chart-yr-lbl')
+      .attr('x', xS(yr)).attr('y', iH + 12)
+      .attr('text-anchor', i === 0 ? 'start' : 'end').text(yr);
+  });
+
+  // Y labels
+  g.append('text').attr('class', 'chart-label').attr('x', -3).attr('y', 4).attr('text-anchor', 'end')
+    .text(Math.round(yMax / 1.1));
+  g.append('text').attr('class', 'chart-label').attr('x', -3).attr('y', iH).attr('text-anchor', 'end')
+    .text('0');
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER HELPERS
+// ═══════════════════════════════════════════════════════
+function addUnifiedOverlays(stateFeatures) {
+  // SVG pattern for hatched unified-system states
+  let defs = root.select('defs');
+  if (defs.empty()) defs = root.append('defs');
+  // Remove and re-add to avoid duplicate IDs
+  defs.selectAll('#hatch-unified').remove();
+  const pat = defs.append('pattern')
+    .attr('id', 'hatch-unified')
+    .attr('patternUnits', 'userSpaceOnUse')
+    .attr('width', 6).attr('height', 6)
+    .attr('patternTransform', 'rotate(45)');
+  pat.append('rect').attr('width', 6).attr('height', 6).attr('fill', '#0d1a28');
+  pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 6)
+    .attr('stroke', '#243550').attr('stroke-width', 2.5);
+
+  const unified = stateFeatures.filter(d => isUnified(stateFipsOf(d)));
+  root.append('g').attr('class', 'unified-fills').selectAll('path')
+    .data(unified).join('path')
+    .attr('class', 'unified-fill')
+    .attr('d', geoPath)
+    .attr('fill', 'url(#hatch-unified)')
+    .attr('stroke', '#243550')
+    .attr('stroke-width', 0.8);
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER: NATIONAL
+// ═══════════════════════════════════════════════════════
+function renderNational() {
+  VIEW = 'national'; selState = null; selFips = null;
+  root.selectAll('*').remove();
+  resetZoom(600);
+
+  const counties    = topojson.feature(topoUS, topoUS.objects.counties);
+  const states      = topojson.feature(topoUS, topoUS.objects.states);
+  const inclCounties = counties.features.filter(d => !isExcluded(countyFipsOf(d).slice(0, 2)));
+  const inclStates   = states.features.filter(d => !isExcluded(stateFipsOf(d)));
+
+  // County fills
+  root.append('g').attr('class', 'co-fills').selectAll('path')
+    .data(inclCounties).join('path')
+    .attr('class', 'county-fill')
+    .attr('d', geoPath)
+    .attr('fill', d => countyColor(countyFipsOf(d)));
+
+  // County mesh
+  root.append('path')
+    .datum(topojson.mesh(topoUS, topoUS.objects.counties,
+      (a, b) => a !== b
+        && !isExcluded(String(a.id).padStart(5,'0').slice(0,2))
+        && !isExcluded(String(b.id).padStart(5,'0').slice(0,2))
+    ))
+    .attr('class', 'county-border').attr('d', geoPath);
+
+  // State hit areas
+  root.append('g').attr('class', 'st-hits').selectAll('path')
+    .data(inclStates).join('path')
+    .attr('class', 'state-hit').attr('d', geoPath)
+    .on('mousemove', (ev, d) => {
+      const sf   = stateFipsOf(d);
+      const s    = stateMap.get(sf) || {};
+      const hint = isUnified(sf)
+        ? 'Unified state system — no county jail data'
+        : 'Click to explore state';
+      showTip(ev, FIPS_NAME[sf] || 'Unknown', s.jailRate, s.jailPop, null, hint);
+    })
+    .on('mouseleave', hideTip)
+    .on('click', (_, d) => drillState(d));
+
+  // State borders
+  root.append('path')
+    .datum(topojson.mesh(topoUS, topoUS.objects.states,
+      (a, b) => a !== b && !isExcluded(stateFipsOf(a)) && !isExcluded(stateFipsOf(b))
+    ))
+    .attr('class', 'state-border').attr('d', geoPath);
+
+  // Unified-state hatch overlays
+  addUnifiedOverlays(inclStates);
+
+  updatePanel('national', 'United States', natStats);
+  updateBreadcrumb('national', '', '');
+  drawTimeChart('national', null);
+  document.getElementById('back-btn').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER: STATE
+// ═══════════════════════════════════════════════════════
+function drillState(feat) {
+  VIEW = 'state'; selState = feat; selFips = null;
+  root.selectAll('*').remove();
+
+  const sf          = stateFipsOf(feat);
+  const stateName   = FIPS_NAME[sf] || 'Unknown State';
+  const stateCounties = topojson.feature(topoUS, topoUS.objects.counties)
+    .features.filter(d => countyFipsOf(d).startsWith(sf));
+
+  // County fills
+  root.append('g').attr('class', 'co-fills').selectAll('path')
+    .data(stateCounties).join('path')
+    .attr('class', 'county-fill')
+    .attr('d', geoPath)
+    .attr('fill', d => countyColor(countyFipsOf(d)));
+
+  // County mesh
+  root.append('path')
+    .datum(topojson.mesh(topoUS, topoUS.objects.counties,
+      (a, b) => {
+        const af = String(a.id).padStart(5,'0'), bf = String(b.id).padStart(5,'0');
+        return a !== b && af.startsWith(sf) && bf.startsWith(sf);
+      }
+    ))
+    .attr('class', 'county-border').attr('d', geoPath);
+
+  // State border
+  root.append('path').datum(feat).attr('class', 'state-border').attr('d', geoPath);
+
+  // County hit areas
+  root.append('g').attr('class', 'co-hits').selectAll('path')
+    .data(stateCounties).join('path')
+    .attr('class', 'county-hit').attr('d', geoPath)
+    .on('mousemove', (ev, d) => {
+      const fips = countyFipsOf(d);
+      const cd   = countyMap.get(fips);
+      showTip(ev, cd ? `${cd.name}, ${cd.state}` : 'Unknown',
+        cd?.jailRate, cd?.jailPop, cd?.urbanicity, 'Click for county detail');
+    })
+    .on('mouseleave', hideTip)
+    .on('click', (_, d) => drillCounty(d));
+
+  zoomToFeature(feat, 50);
+  updatePanel('state', stateName, stateMap.get(sf) || { year: currentYear });
+  updateBreadcrumb('state', stateName, '');
+  drawTimeChart('state', sf);
+  document.getElementById('back-btn').style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER: COUNTY
+// ═══════════════════════════════════════════════════════
+function drillCounty(feat) {
+  const fips = countyFipsOf(feat);
+  const cd   = countyMap.get(fips);
+  if (!cd) return;
+  VIEW = 'county'; selFips = fips;
+
+  root.selectAll('.county-selected').remove();
+  root.selectAll('.co-fills path')
+    .attr('fill',    d => countyColor(countyFipsOf(d)))
+    .attr('opacity', 1);
+
+  root.append('path').datum(feat)
+    .attr('class', 'county-selected').attr('d', geoPath).raise();
+
+  zoomToFeature(feat, 80);
+  updatePanel('county', `${cd.name}, ${cd.state}`, cd);
+  updateBreadcrumb('county', FIPS_NAME[fips.slice(0, 2)] || '', `${cd.name}, ${cd.state}`);
+  drawTimeChart('county', fips);
+}
+
+// ═══════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════
+function goBack() {
+  if (VIEW === 'county') {
+    VIEW = 'state'; selFips = null;
+    root.selectAll('.county-selected').remove();
+    root.selectAll('.co-fills path')
+      .attr('fill', d => countyColor(countyFipsOf(d))).attr('opacity', 1);
+    const sf = stateFipsOf(selState);
+    zoomToFeature(selState, 50);
+    updatePanel('state', FIPS_NAME[sf] || '', stateMap.get(sf) || { year: currentYear });
+    updateBreadcrumb('state', FIPS_NAME[sf] || '', '');
+    drawTimeChart('state', sf);
+  } else if (VIEW === 'state') {
+    renderNational();
+  }
+}
+function goNational() { if (VIEW !== 'national') renderNational(); }
+window.goNational = goNational;
+window.goBack     = goBack;
+
+// ═══════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════
+function updatePanel(level, name, s) {
+  document.getElementById('sh-level').textContent =
+    level === 'national' ? 'National' : level === 'state' ? 'State' : 'County';
+  document.getElementById('sh-name').textContent =
+    name.length > 26 ? name.slice(0, 24) + '…' : name;
+  document.getElementById('sh-sub').textContent = s.year ? `Data: ${s.year}` : '—';
+
+  document.getElementById('p-jailpop').textContent  =
+    (s.jailPop  > 0) ? Math.round(s.jailPop).toLocaleString()  : '—';
+  document.getElementById('p-jailrate').textContent =
+    (s.jailRate > 0) ? Math.round(s.jailRate).toLocaleString() : '—';
+
+  const groups = [
+    { label: 'Black',  rate: s.blackRate,  color: '#60a5fa' },
+    { label: 'White',  rate: s.whiteRate,  color: '#a78bfa' },
+    { label: 'Latino', rate: s.latinxRate, color: '#34d399' },
+    { label: 'Native', rate: s.nativeRate, color: '#fb923c' },
+  ].filter(g => g.rate > 0);
+
+  const maxR = Math.max(...groups.map(g => g.rate), 1);
+  document.getElementById('p-bars').innerHTML = groups.length
+    ? groups.map(g => `
+        <div class="bar-row">
+          <span class="bar-label">${g.label}</span>
+          <div class="bar-bg"><div class="bar-fill" style="width:${(g.rate/maxR*100).toFixed(1)}%;background:${g.color}"></div></div>
+          <span class="bar-val">${Math.round(g.rate).toLocaleString()}</span>
+        </div>`).join('')
+    : '<div style="font-size:10px;color:#2a3a50;padding-top:2px">No racial breakdown available</div>';
+}
+
+function updateBreadcrumb(level, stateName, countyName) {
+  const bcUS    = document.getElementById('bc-us');
+  const s1      = document.getElementById('bc-s1');
+  const bcState = document.getElementById('bc-state');
+  const s2      = document.getElementById('bc-s2');
+  const bcCo    = document.getElementById('bc-county');
+
+  bcUS.className = 'bc' + (level === 'national' ? ' active' : '');
+  if (level === 'national') {
+    [s1, bcState, s2, bcCo].forEach(el => el.style.display = 'none');
+  } else if (level === 'state') {
+    [s1, bcState].forEach(el => el.style.display = '');
+    [s2, bcCo].forEach(el => el.style.display = 'none');
+    bcState.textContent = stateName; bcState.className = 'bc active'; bcState.onclick = null;
+  } else {
+    [s1, bcState, s2, bcCo].forEach(el => el.style.display = '');
+    bcState.textContent = stateName; bcState.className = 'bc';
+    bcState.onclick = () => selState && drillState(selState);
+    bcCo.textContent = countyName; bcCo.className = 'bc active';
+  }
+}
+
+function showTip(ev, name, rate, pop, urbanicity, hint) {
+  document.getElementById('tt-name').textContent = name;
+  document.getElementById('tt-rate').textContent = rate > 0 ? Math.round(rate).toLocaleString() : '—';
+  document.getElementById('tt-pop').textContent  = pop  > 0 ? Math.round(pop).toLocaleString()  : '—';
+  const urbRow = document.getElementById('tt-urb-row');
+  if (urbanicity) {
+    document.getElementById('tt-urb').textContent = urbanicity.charAt(0).toUpperCase() + urbanicity.slice(1);
+    urbRow.style.display = '';
+  } else {
+    urbRow.style.display = 'none';
+  }
+  document.getElementById('tt-hint').textContent = hint || '';
+  const tt = document.getElementById('tooltip');
+  tt.style.left = Math.min(ev.clientX + 14, window.innerWidth  - 200) + 'px';
+  tt.style.top  = Math.max(ev.clientY - 10, 8) + 'px';
+  tt.classList.add('show');
+}
+function hideTip() { document.getElementById('tooltip').classList.remove('show'); }
+
+init();
+</script>
+</body>
+</html>
