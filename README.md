@@ -3,7 +3,7 @@
 This project visualizes incarceration trends across U.S. counties and states using an interactive map.
 
 ## Live Demo
-(Add your GitHub Pages link here)
+https://cpark49.github.io/CMSC471-FinalProject/
 
 ## Technologies
 - JavaScript (D3.js)
