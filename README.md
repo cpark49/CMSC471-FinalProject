@@ -158,8 +158,7 @@ CMSC471-FinalProject/
 │   ├── incarceration_trends_county.csv
 │   └── incarceration_trends_state.csv
 │
-├── README.md
-└── assets/
+└──README.md
 ```
 
 ## Acknowledgements
