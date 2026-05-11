@@ -31,12 +31,8 @@ https://github.com/cpark49/CMSC471-FinalProject
 
 ## Team Members
 
+- Ian Henry
 - Chan Park
-- [Add teammate name]
-- [Add teammate name]
-- [Add teammate name if applicable]
-
-Canvas Group #: [Add Group Number]
 
 ---
 
@@ -185,32 +181,6 @@ CMSC471-FinalProject/
 
 ---
 
-## Team Contributions
-
-### Chan Park
-- Interactive map implementation
-- D3.js visualization logic
-- Zoom/pan interactions
-- Timeline controls
-- Statistics panel integration
-- GitHub Pages deployment
-
-### [Teammate Name]
-- Narrative writing
-- Design feedback
-- Data cleaning
-- Presentation preparation
-
-### [Teammate Name]
-- Tooltip interactions
-- Chart components
-- Testing/debugging
-- README documentation
-
-(Add/edit based on actual contributions.)
-
----
-
 ## Development Process
 
 The project was developed over approximately 5–6 weeks.
@@ -229,11 +199,9 @@ The project was developed over approximately 5–6 weeks.
 
 ## AI Usage
 
-We used AI tools such as ChatGPT to:
+We used AI tools to:
 - Brainstorm interaction ideas
 - Debug JavaScript and D3.js issues
-- Improve narrative wording
-- Refine README documentation
-- Assist with presentation preparation
+- Refine documentation
 
 All generated code and writing were reviewed, modified, and integrated by the team.
