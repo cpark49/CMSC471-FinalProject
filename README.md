@@ -231,7 +231,7 @@ CMSC471-FinalProject/
 The project was developed over approximately 5–6 weeks.
 
 ### Estimated Total Development Time
-- Approximately 40–60 people-hours
+- Approximately 60-90 people-hours
 
 ### Most Time-Consuming Tasks
 - Processing large county-level datasets
