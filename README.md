@@ -181,6 +181,27 @@ CMSC471-FinalProject/
 
 ---
 
+## Team Contributions
+
+### Ian Henry
+- Led the overall development of the project architecture and visualization design
+- Implemented core D3.js visualization components and interaction logic
+- Designed and developed the scrollytelling experience and coordinated transitions
+- Processed and managed the incarceration datasets
+- Optimized map rendering and performance for large county-level data
+- Helped integrate charts, tooltips, and interactive components
+
+### Chan Park
+- Assisted with D3.js visualization logic and timeline controls
+- Assisted with debugging, testing, and final refinement of the application
+- Managed GitHub repository setup and GitHub Pages deployment
+- Contributed to README documentation and project write-up
+- Gathered and incorporated feedback during team discussions and development reviews
+- Reviewed implementation consistency and helped ensure application stability
+
+
+---
+
 ## Development Process
 
 The project was developed over approximately 5–6 weeks.
