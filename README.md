@@ -191,6 +191,7 @@ CMSC471-FinalProject/
 
 ### Data Source
 - Vera Institute of Justice — Incarceration Trends Dataset
+- https://github.com/vera-institute/incarceration-trends
 
 ### Geography Data
 - us-atlas / TopoJSON by Mike Bostock
